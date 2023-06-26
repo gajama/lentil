@@ -31,7 +31,8 @@
 
 (require 'pulse)
 
-(defgroup lentil nil "Options for controlling the behaviour of Lentil mode")
+(defgroup lentil nil "Options for controlling the behaviour of Lentil
+mode" :group 'convenience :group 'pulse)
 
 (defcustom lentil-inhibit-pulse-functions nil
   "An alist whose elements have the form (FUNCTION . SYMBOL).
@@ -68,6 +69,8 @@ that stores the beginning of the region Lentil will highlight.")
 (defvar-local lentil-highlight-end 0 "Buffer-local variable that stores
 end of the region Lentil will highlight.")
 
+(defvar lentil-mode)
+
 (defun lentil--inhibit-pulse-maybe ()
   "Iterate through `lentil-inhibit-pulse-functions'.
 Call each FUNCTION in turn.  If FUNCTION returns t, return the
@@ -86,8 +89,8 @@ associated SYMBOL.  Return nil if no FUNCTION returns t."
 (defun lentil-pulse ()
   "Maybe highlight some region with a single pulse.
 First call the function `lentil--inhibit-pulse-maybe'.  If that
-function returns 'inhibit', then do not apply any highlighting.
-If that function returns 'freeze', apply a static highlight
+function returns `inhibit', then do not apply any highlighting.
+If that function returns `freeze', apply a static highlight
 instead of a pulse.  By default, the region highlighted is the
 current logical line, but this can be changed by specifying
 alternative functions in `lentil-highlight-region-functions'.
@@ -136,16 +139,6 @@ This function always returns t."
   (setq lentil-highlight-beginning (progn (forward-visible-line 0) (point))
         lentil-highlight-end (progn (forward-visible-line 1) (point)))
   t)
-
-(defun lentil-on-outline-heading-p ()
-  "An example function for `lentil-inhibit-pulse-functions'.
-This function returns non-nil if point is on an Outline mode
-heading."
-  (and (fboundp #'outline-on-heading-p)
-       (or (outline-on-heading-p)
-           (save-excursion
-             (and (not (or (bobp)(backward-char)))
-                  (outline-invisible-p))))))
  
 (defun lentil--store-current-line ()
   "Store the current line number."
