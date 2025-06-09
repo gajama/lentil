@@ -58,6 +58,12 @@ default function to use."
   "Face used for the Lentil highlight pulse.
 Defaults to `highlight’.")
 
+(defface lentil-background
+  '((default . (:inherit default  :extend t)))
+  "Face used for the Lentil highlight pulse.
+**Do not customise** as it stores a temporary copy of the background
+  color when the pulse is activated")
+
 (defcustom lentil-pulse-iterations 12 "Number of iterations the pulse
 goes through as it fades. Also see `lentil-pulse-delay'" :type 'integer)
 (defcustom lentil-pulse-delay 0.045 "Amount of time between each
@@ -105,12 +111,55 @@ Uses the face `lentil-highlight'."
      (and pulse-flag (= lentil--last-line
                         (line-number-at-pos (point))))
      (save-excursion
+       (set-face-background 'lentil-background (background-color-at-point) (window-frame))
        (or (lentil--get-highlight-region)
            (lentil--default-highlight-region))
        (pulse-momentary-highlight-region
         lentil-highlight-beginning
         lentil-highlight-end
         'lentil-highlight)))))
+
+
+(run-with-idle-timer 0.25 t #'(lambda() (garbage-collect-maybe 16)))
+
+(defun lentil--pulse-momentary-highlight-overlay (o &optional face)
+  "Pulse the overlay O, unhighlighting before next command.
+Optional argument FACE specifies the face to do the highlighting."
+  (if (eq pulse-flag 'never)
+      nil
+    ;; We don't support simultaneous highlightings.
+    (pulse-momentary-unhighlight)
+    (overlay-put o 'original-face (overlay-get o 'face))
+    ;; Make this overlay take priority over the `transient-mark-mode'
+    ;; overlay.
+    (overlay-put o 'original-priority (overlay-get o 'priority))
+    (overlay-put o 'priority 1)
+    (setq pulse-momentary-overlay o)
+    (if (or (not pulse-flag) (not (pulse-available-p)))
+	;; Provide a face... clear on next command
+	(progn
+	  (overlay-put o 'face (or face 'pulse-highlight-start-face))
+	  (add-hook 'pre-command-hook
+		    #'pulse-momentary-unhighlight))
+      ;; Pulse it.
+      (overlay-put o 'face 'pulse-highlight-face)
+      ;; The pulse function puts FACE onto 'pulse-highlight-face.
+      ;; Thus above we put our face on the overlay, but pulse
+      ;; with a reference face needed for the color.
+      (pulse-reset-face face)
+      (let* ((start (color-name-to-rgb
+                     (face-background 'pulse-highlight-face nil 'default)))
+             (stop (color-name-to-rgb (face-background 'lentil-background)))
+             (colors (mapcar (apply-partially 'apply 'color-rgb-to-hex)
+                             (cons start (color-gradient start stop (1- pulse-iterations))))))
+        (setq pulse-momentary-timer
+              (run-with-timer 0 pulse-delay #'pulse-tick
+                              colors
+                              (time-add nil
+                                        (* pulse-delay pulse-iterations))))))))
+
+(advice-add #'pulse-momentary-highlight-overlay :override #'lentil--pulse-momentary-highlight-overlay)
+
 
 (defun lentil--get-highlight-region ()
   "Call a function from `lentil-highlight-region-functions',\
