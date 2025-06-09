@@ -54,9 +54,9 @@ default function to use."
   :type '(alist :key-type (choice (const t) (symbol :tag "Major Mode")) :value-type function))
 
 (defface lentil-highlight
-  '((default . (:inherit hl-line)))
+  '((default . (:inherit highlight :extend t)))
   "Face used for the Lentil highlight pulse.
-Defaults to hl-line.")
+Defaults to `highlight’.")
 
 (defcustom lentil-pulse-iterations 12 "Number of iterations the pulse
 goes through as it fades. Also see `lentil-pulse-delay'" :type 'integer)
