@@ -66,14 +66,18 @@ Defaults to `highlight’.")
 
 (defcustom lentil-pulse-iterations 12 "Number of iterations the pulse
 goes through as it fades. Also see `lentil-pulse-delay'" :type 'integer)
-(defcustom lentil-pulse-delay 0.045 "Amount of time between each
+(defcustom lentil-pulse-delay 0.045 "Amount of time, in seconds, between each
 fading iteration of pulse. Also see `lentil-pulse-iterations'" :type 'number)
-(defvar-local lentil--last-line 0 "Buffer-local variable that stores the
-last line highlighted by Lentil.")
+(defvar-local lentil-last-position 0 "Buffer-local variable that stores the
+last value returned by `lentil-store-position-function'.")
 (defvar-local lentil-highlight-beginning 0 "Buffer-local variable
 that stores the beginning of the region Lentil will highlight.")
 (defvar-local lentil-highlight-end 0 "Buffer-local variable that stores
 end of the region Lentil will highlight.")
+(defvar-local lentil-store-position-function #'lentil-get-beginning-of-visual-line "
+The function used to record the current position, for comparison after
+point next moves. If the value returned by this function does not
+change, Lentil does nothing.")
 
 (defvar lentil-mode)
 
@@ -98,7 +102,7 @@ First call the function `lentil--inhibit-pulse-maybe'.  If that
 function returns `inhibit', then do not apply any highlighting.
 If that function returns `freeze', apply a static highlight
 instead of a pulse.  By default, the region highlighted is the
-current logical line, but this can be changed by specifying
+current visual line, but this can be changed by specifying
 alternative functions in `lentil-highlight-region-functions'.
 Uses the face `lentil-highlight'."
   (let
@@ -108,8 +112,8 @@ Uses the face `lentil-highlight'."
        (inhibit (eq (lentil--inhibit-pulse-maybe) 'inhibit)))
     (or
      inhibit
-     (and pulse-flag (= lentil--last-line
-                        (line-number-at-pos (point))))
+     (and pulse-flag (= lentil-last-position
+                        (funcall lentil-store-position-function)))
      (save-excursion
        (set-face-background 'lentil-background (background-color-at-point) (window-frame))
        (or (lentil--get-highlight-region)
@@ -124,7 +128,10 @@ Uses the face `lentil-highlight'."
 
 (defun lentil--pulse-momentary-highlight-overlay (o &optional face)
   "Pulse the overlay O, unhighlighting before next command.
-Optional argument FACE specifies the face to do the highlighting."
+Optional argument FACE specifies the face to do the highlighting.
+
+This function advises `pulse-momentary-highlight-overlay' by overriding
+it, so we can change the face background."
   (if (eq pulse-flag 'never)
       nil
     ;; We don't support simultaneous highlightings.
@@ -169,7 +176,7 @@ The called function will set the beginning and end of the region
 that Lentil will highlight.
 
 Return the function called, or nil if no function was called."
-  (if-let
+  (if-let*
       ((fn (or
              (alist-get major-mode lentil-highlight-region-functions)
              (alist-get t lentil-highlight-region-functions))))
@@ -177,36 +184,42 @@ Return the function called, or nil if no function was called."
     nil))
 
 (defun lentil--default-highlight-region ()
-  "Store the start and end positions of the current logical line.
-These are stored in the local variables
+  "Store the start positions of the current and following visual lines.
+These are stored in the buffer-local variables
 `lentil-highlight-beginning' and `lentil-highlight-end'.
 
 This function will be called if no default is specified in the
 variable `lentil-highlight-region-functions'.
 
 This function always returns t."
-  (setq lentil-highlight-beginning (progn (forward-visible-line 0) (point))
-        lentil-highlight-end (progn (forward-visible-line 1) (point)))
+  (setq lentil-highlight-beginning (save-excursion (beginning-of-visual-line))
+        lentil-highlight-end (save-excursion (beginning-of-visual-line 2)))
   t)
- 
-(defun lentil--store-current-line ()
-  "Store the current line number."
-  (setq lentil--last-line (line-number-at-pos (point) t)))
+
+(defun lentil-get-beginning-of-visual-line ()
+  "Returns the position of the start of the current visual line."
+             (save-excursion
+               (beginning-of-visual-line)))
+
+(defun lentil--store-position ()
+  "Sets `lentil-last-position' to the value returned by
+`lentil-store-position-function'."
+  (setq lentil-last-position (funcall lentil-store-position-function)))
 
 (defun lentil--add-or-remove-hooks ()
   "Add/remove hooks when enabling/disabling Lentil."
   (if (not lentil-mode)
       (progn (remove-hook 'pre-command-hook #'lentil--store-current-line t)
              (remove-hook 'post-command-hook #'lentil-pulse t))
-    (progn (add-hook 'pre-command-hook #'lentil--store-current-line nil t)
+    (progn (add-hook 'pre-command-hook #'lentil--store-position nil t)
            (add-hook 'post-command-hook #'lentil-pulse nil t))))
 
 (define-minor-mode lentil-mode
-  "Highlight the current line with a single pulse highlight.
+  "Highlight a specified region with a single pulse highlight.
 
-Lentil is a simple buffer-local minor mode intended as an
-alternative to `hl-line-mode'.  By default, the current logical
-line is identified by a fading highlight.
+Lentil is a simple minor mode intended as an alternative to
+`hl-line-mode'.  By default, the region highlighted is the current
+visual line.
 
 Use the custom variable `lentil-inhibit-pulse-functions' to
 define conditions under which a line should either not be
@@ -216,6 +229,13 @@ should be used instead.
 Use the custom variable `lentil-highlight-region-functions' to
 specify alternative methods for defining the start and end of the
 region to which the highlight is applied.
+
+The buffer-local variable `lentil-store-position-function' can be used
+to control what metric Lentil uses to assess whether the position of the
+cursor has changed sufficiently to trigger a pulse. By default, this is
+a function that stores the position of the beginning of the current
+visual line, so a pulse only happens when point moves to a different
+visual line.
 
 Lentil is so called because a lentil is a small pulse."
 
